@@ -1,0 +1,17 @@
+@startuml
+
+actor Cidadao
+participant "Sistema de Mapa de\nÁreas de Risco" as Sistema
+participant "Serviço de Mapas" as Mapas
+database "Banco de Dados" as BD
+
+Cidadao -> Sistema: Informar endereço
+Sistema -> Mapas: Solicitar coordenadas
+Mapas --> Sistema: Retornar latitude/longitude
+
+Sistema -> BD: Consultar áreas de risco
+BD --> Sistema: Retornar áreas próximas
+
+Sistema --> Cidadao: Exibir localização e nível de risco
+
+@enduml

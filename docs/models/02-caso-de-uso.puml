@@ -1,0 +1,36 @@
+@startuml
+
+title UC02 - Pesquisar Localização
+
+actor "Cidadão" as Cidadao
+actor "Serviço de Mapas" as Mapas
+
+rectangle "Sistema de Mapa de Áreas de Risco" {
+
+    usecase "Pesquisar localização" as UC02
+
+    note right of UC02
+        Pré-condição:
+        Usuário está na tela do mapa.
+
+        Fluxo principal:
+        1. Informar endereço.
+        2. Sistema consulta o Serviço de Mapas.
+        3. Serviço retorna as coordenadas.
+        4. Sistema verifica áreas de risco.
+        5. Sistema apresenta o resultado.
+
+        Exceções:
+        E1 - Endereço não encontrado.
+        E2 - Serviço de Mapas indisponível.
+
+        Pós-condição:
+        Localização e nível de risco
+        são apresentados ao usuário.
+    end note
+}
+
+Cidadao --> UC02
+UC02 --> Mapas
+
+@enduml

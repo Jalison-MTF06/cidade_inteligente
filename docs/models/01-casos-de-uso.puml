@@ -1,0 +1,32 @@
+@startuml
+left to right direction
+
+actor "Cidadão" as Cidadao
+actor "Administrador /\nDefesa Civil" as Admin
+actor "Serviço de Mapas" as Mapa
+
+rectangle "Sistema de Mapa de Áreas de Risco de Chuvas" {
+
+    usecase "Visualizar mapa\nde riscos" as UC1
+    usecase "Pesquisar\nlocalização" as UC2
+    usecase "Consultar nível\nde risco" as UC3
+    usecase "Consultar informações\nda região" as UC4
+
+    usecase "Cadastrar área\nde risco" as UC5
+    usecase "Atualizar área\nde risco" as UC6
+    usecase "Classificar área\nde risco" as UC7
+
+}
+
+Cidadao --> UC1
+Cidadao --> UC2
+Cidadao --> UC3
+Cidadao --> UC4
+
+Admin --> UC5
+Admin --> UC6
+Admin --> UC7
+
+UC2 --> Mapa
+
+@enduml

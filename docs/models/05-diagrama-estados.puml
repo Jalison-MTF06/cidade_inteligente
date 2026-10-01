@@ -1,0 +1,21 @@
+@startuml
+
+[*] --> Cadastrada
+
+Cadastrada --> "Em análise" : enviar para avaliação
+
+"Em análise" --> Validada : risco confirmado
+
+"Em análise" --> Cadastrada : informações insuficientes
+
+Validada --> Ativa : publicar no mapa
+
+Ativa --> Atualizada : atualizar informações
+
+Atualizada --> Ativa : publicação concluída
+
+Ativa --> Inativa : área deixa de apresentar risco
+
+Inativa --> "Em análise" : nova avaliação
+
+@enduml

@@ -1,0 +1,52 @@
+@startuml
+
+class Usuario {
+    - id: int
+    - nome: String
+    - email: String
+    - tipo: String
+}
+
+class AreaRisco {
+    - id: int
+    - nome: String
+    - descricao: String
+    - nivelRisco: String
+    - status: String
+}
+
+class Localizacao {
+    - id: int
+    - endereco: String
+    - latitude: double
+    - longitude: double
+}
+
+class ClassificacaoRisco {
+    - id: int
+    - nivel: String
+    - descricao: String
+}
+
+class OcorrenciaChuva {
+    - id: int
+    - intensidade: String
+    - data: Date
+    - descricao: String
+}
+
+class Alerta {
+    - id: int
+    - mensagem: String
+    - dataHora: DateTime
+    - nivel: String
+}
+
+Usuario "1" --> "0..*" AreaRisco : cadastra/atualiza >
+
+AreaRisco "1" *-- "1" Localizacao
+AreaRisco "1" --> "1" ClassificacaoRisco
+AreaRisco "1" --> "0..*" OcorrenciaChuva
+AreaRisco "1" --> "0..*" Alerta
+
+@enduml
