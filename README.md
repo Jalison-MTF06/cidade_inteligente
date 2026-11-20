@@ -6,7 +6,7 @@ Aplicativo desenvolvido com **Flutter** e **Dart**, com uma interface inicial de
 
 O Cidade Inteligente é um projeto em desenvolvimento. Nesta versão, o aplicativo apresenta uma tela de entrada com identidade visual própria e permite alternar entre os formulários de login e cadastro.
 
-> **Importante:** login e cadastro são demonstrativos. Atualmente, o aplicativo valida alguns campos e exibe mensagens na tela, mas não autentica usuários nem salva contas em um banco de dados.
+Sem a configuração do Supabase, o app abre em modo demonstrativo e mantém o perfil somente durante a sessão. Com o Supabase, o login usa contas reais e o perfil fica salvo entre sessões.
 
 ## Funcionalidades implementadas
 
@@ -65,6 +65,20 @@ flutter run
 ```
 
 O comando `flutter doctor` verifica a configuração do ambiente. Resolva os itens necessários para a plataforma em que pretende executar o aplicativo.
+
+## Configurar o Supabase
+
+1. Crie um projeto no [painel do Supabase](https://supabase.com/dashboard).
+2. No **SQL Editor** do projeto, abra uma nova consulta, cole o conteúdo da [migração de perfis](supabase/migrations/20261120000000_perfis.sql) e execute uma vez. A migração cria a tabela `public.perfis` e limita a consulta e a edição ao titular da conta.
+3. Abra **Connect** no painel e copie a **Project URL** e a chave **Publishable**. Use somente a chave publicável no Flutter.
+4. Para testar no Chrome, configure a **Site URL** em **Authentication → URL Configuration** como `http://localhost:8080`. Em um ambiente publicado, use o endereço público do app para o retorno do link de confirmação.
+5. Execute na pasta do projeto, substituindo os valores de exemplo.
+
+```powershell
+flutter run -d chrome --web-port=8080 --dart-define=SUPABASE_URL=https://SEU-PROJETO.supabase.co --dart-define=SUPABASE_PUBLISHABLE_KEY=sb_publishable_SUA_CHAVE
+```
+
+Cadastre uma conta, confirme o e-mail se a confirmação estiver habilitada e faça login. No dashboard, abra **Perfil**, selecione sua cidade e clique em **Salvar perfil**. Saia e entre novamente com a mesma conta para confirmar que o perfil foi recuperado. A tabela `perfis` recebe a linha do usuário ao salvar o perfil pela primeira vez.
 
 ## Verificação e testes
 

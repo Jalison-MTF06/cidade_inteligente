@@ -1,12 +1,38 @@
-
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-void main() {
-  runApp(const CidadeInteligente());
+import 'painel_cidade.dart';
+import 'repositorio_perfil.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  const url = String.fromEnvironment('SUPABASE_URL');
+  const chave = String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY');
+  if (url.isEmpty && chave.isEmpty) {
+    runApp(const CidadeInteligente());
+    return;
+  }
+  if (url.isEmpty || chave.isEmpty) {
+    runApp(const CidadeInteligente(erroConfiguracao: true));
+    return;
+  }
+  try {
+    await Supabase.initialize(url: url, publishableKey: chave);
+    runApp(CidadeInteligente(cliente: Supabase.instance.client));
+  } catch (_) {
+    runApp(const CidadeInteligente(erroConfiguracao: true));
+  }
 }
 
 class CidadeInteligente extends StatelessWidget {
-  const CidadeInteligente({super.key});
+  const CidadeInteligente({
+    super.key,
+    this.cliente,
+    this.erroConfiguracao = false,
+  });
+
+  final SupabaseClient? cliente;
+  final bool erroConfiguracao;
 
   @override
   Widget build(BuildContext context) {
@@ -16,17 +42,66 @@ class CidadeInteligente extends StatelessWidget {
       theme: ThemeData(
         useMaterial3: true,
         fontFamily: 'Arial',
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF1557A6),
-        ),
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1557A6)),
       ),
-      home: const TelaLogin(),
+      home: erroConfiguracao
+          ? const Scaffold(
+              body: Center(
+                child: Text(
+                  'Confira a URL e a chave publicável do Supabase e reinicie o app.',
+                ),
+              ),
+            )
+          : _Sessao(cliente: cliente),
+    );
+  }
+}
+
+class _Sessao extends StatelessWidget {
+  const _Sessao({required this.cliente});
+
+  final SupabaseClient? cliente;
+
+  @override
+  Widget build(BuildContext context) {
+    final cliente = this.cliente;
+    if (cliente == null) return const TelaLogin();
+    return StreamBuilder<AuthState>(
+      stream: cliente.auth.onAuthStateChange,
+      builder: (context, _) {
+        final usuario = cliente.auth.currentSession?.user;
+        if (usuario == null) return TelaLogin(cliente: cliente);
+        final nome = usuario.userMetadata?['nome'];
+        return PainelCidade(
+          key: ValueKey(usuario.id),
+          usuario: nome is String && nome.trim().isNotEmpty
+              ? nome
+              : usuario.email?.split('@').first ?? 'Usuário',
+          repositorio: RepositorioPerfil(cliente, usuario.id),
+          aoSair: () async {
+            final avisos = ScaffoldMessenger.of(context);
+            try {
+              await cliente.auth.signOut();
+            } catch (_) {
+              if (avisos.mounted) {
+                avisos.showSnackBar(
+                  const SnackBar(
+                    content: Text('Não foi possível sair. Tente novamente.'),
+                  ),
+                );
+              }
+            }
+          },
+        );
+      },
     );
   }
 }
 
 class TelaLogin extends StatefulWidget {
-  const TelaLogin({super.key});
+  const TelaLogin({super.key, this.cliente});
+
+  final SupabaseClient? cliente;
 
   @override
   State<TelaLogin> createState() => _TelaLoginState();
@@ -35,23 +110,31 @@ class TelaLogin extends StatefulWidget {
 class _TelaLoginState extends State<TelaLogin> {
   bool cadastro = false;
   bool mostrarSenha = false;
+  bool enviando = false;
 
   final nome = TextEditingController();
   final email = TextEditingController();
   final senha = TextEditingController();
+  final rolagem = ScrollController();
 
   @override
   void dispose() {
     nome.dispose();
     email.dispose();
     senha.dispose();
+    rolagem.dispose();
     super.dispose();
   }
 
   void alternarTela() {
+    FocusScope.of(context).unfocus();
+    ScaffoldMessenger.of(context).clearSnackBars();
+    senha.clear();
     setState(() {
       cadastro = !cadastro;
+      mostrarSenha = false;
     });
+    if (rolagem.hasClients) rolagem.jumpTo(0);
   }
 
   InputDecoration campo(String texto, IconData icone) {
@@ -70,42 +153,101 @@ class _TelaLoginState extends State<TelaLogin> {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(
-          color: Color(0xFF1557A6),
-          width: 1.5,
-        ),
+        borderSide: const BorderSide(color: Color(0xFF1557A6), width: 1.5),
       ),
     );
   }
 
-  void enviar() {
+  Future<void> enviar() async {
+    if (enviando) return;
     if (email.text.trim().isEmpty || senha.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Preencha o e-mail e a senha.'),
-        ),
+        const SnackBar(content: Text('Preencha o e-mail e a senha.')),
       );
       return;
     }
 
     if (cadastro && nome.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Digite seu nome completo.'),
-        ),
+        const SnackBar(content: Text('Digite seu nome completo.')),
       );
       return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          cadastro
-              ? 'Cadastro demonstrativo realizado!'
-              : 'Tela de login funcionando!',
+    final endereco = email.text.trim();
+    final usuario = cadastro ? nome.text.trim() : endereco.split('@').first;
+    final cliente = widget.cliente;
+    if (cliente != null) {
+      if (cadastro && usuario.runes.length > 120) {
+        _avisar('Use até 120 caracteres no nome.');
+        return;
+      }
+      await _autenticar(cliente, endereco, usuario);
+      return;
+    }
+    final navegador = Navigator.of(context);
+    ScaffoldMessenger.of(context).clearSnackBars();
+    navegador.pushReplacement(
+      MaterialPageRoute<void>(
+        builder: (_) => PainelCidade(
+          usuario: usuario,
+          aoSair: () => navegador.pushReplacement(
+            MaterialPageRoute<void>(builder: (_) => const TelaLogin()),
+          ),
         ),
       ),
     );
+  }
+
+  Future<void> _autenticar(
+    SupabaseClient cliente,
+    String endereco,
+    String usuario,
+  ) async {
+    setState(() => enviando = true);
+    try {
+      if (cadastro) {
+        final resposta = await cliente.auth.signUp(
+          email: endereco,
+          password: senha.text,
+          data: {'nome': usuario},
+        );
+        if (mounted && resposta.session == null) {
+          alternarTela();
+          _avisar(
+            'Confira seu e-mail para confirmar a conta. Depois, faça login.',
+          );
+        }
+      } else {
+        await cliente.auth.signInWithPassword(
+          email: endereco,
+          password: senha.text,
+        );
+      }
+    } on AuthException catch (erro) {
+      if (mounted) {
+        _avisar(switch (erro.code) {
+          'invalid_credentials' => 'E-mail ou senha inválidos.',
+          'email_not_confirmed' =>
+            'Confirme o endereço de e-mail para continuar.',
+          'weak_password' =>
+            'Escolha uma senha que atenda às regras do projeto.',
+          'user_already_exists' => 'Já existe uma conta com esse e-mail.',
+          'email_address_invalid' ||
+          'validation_failed' => 'Confira o e-mail e a senha.',
+          _ => 'Não foi possível autenticar. Confira seus dados e tente novamente.',
+        });
+      }
+    } catch (_) {
+      if (mounted) _avisar('Serviço indisponível. Tente novamente.');
+    } finally {
+      if (mounted) setState(() => enviando = false);
+    }
+  }
+
+  void _avisar(String mensagem) {
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(mensagem)));
   }
 
   @override
@@ -116,11 +258,7 @@ class _TelaLoginState extends State<TelaLogin> {
         height: double.infinity,
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [
-              Color(0xFFEAF3FF),
-              Color(0xFFF7F9FC),
-              Colors.white,
-            ],
+            colors: [Color(0xFFEAF3FF), Color(0xFFF7F9FC), Colors.white],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -128,6 +266,7 @@ class _TelaLoginState extends State<TelaLogin> {
         child: SafeArea(
           child: Center(
             child: SingleChildScrollView(
+              controller: rolagem,
               padding: const EdgeInsets.all(24),
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 420),
@@ -180,8 +319,18 @@ class _TelaLoginState extends State<TelaLogin> {
                             color: Color(0xFF718096),
                           ),
                         ),
+                        if (widget.cliente == null)
+                          const Text('Modo demonstrativo'),
 
-                        const SizedBox(height: 30),
+                        const SizedBox(height: 12),
+                        TextButton.icon(
+                          onPressed: enviando ? null : alternarTela,
+                          icon: Icon(
+                            cadastro ? Icons.arrow_back : Icons.person_add_alt,
+                          ),
+                          label: Text(cadastro ? 'Fazer login' : 'Cadastre-se'),
+                        ),
+                        const SizedBox(height: 12),
 
                         if (cadastro) ...[
                           TextField(
@@ -197,34 +346,31 @@ class _TelaLoginState extends State<TelaLogin> {
                         TextField(
                           controller: email,
                           keyboardType: TextInputType.emailAddress,
-                          decoration: campo(
-                            'E-mail',
-                            Icons.email_outlined,
-                          ),
+                          decoration: campo('E-mail', Icons.email_outlined),
                         ),
 
                         const SizedBox(height: 16),
 
                         TextField(
                           controller: senha,
+                          textInputAction: TextInputAction.done,
+                          onSubmitted: (_) => enviar(),
                           obscureText: !mostrarSenha,
-                          decoration: campo(
-                            'Senha',
-                            Icons.lock_outline,
-                          ).copyWith(
-                            suffixIcon: IconButton(
-                              icon: Icon(
-                                mostrarSenha
-                                    ? Icons.visibility_off
-                                    : Icons.visibility,
+                          decoration: campo('Senha', Icons.lock_outline)
+                              .copyWith(
+                                suffixIcon: IconButton(
+                                  icon: Icon(
+                                    mostrarSenha
+                                        ? Icons.visibility_off
+                                        : Icons.visibility,
+                                  ),
+                                  onPressed: () {
+                                    setState(() {
+                                      mostrarSenha = !mostrarSenha;
+                                    });
+                                  },
+                                ),
                               ),
-                              onPressed: () {
-                                setState(() {
-                                  mostrarSenha = !mostrarSenha;
-                                });
-                              },
-                            ),
-                          ),
                         ),
 
                         const SizedBox(height: 26),
@@ -233,7 +379,7 @@ class _TelaLoginState extends State<TelaLogin> {
                           width: double.infinity,
                           height: 52,
                           child: ElevatedButton(
-                            onPressed: enviar,
+                            onPressed: enviando ? null : enviar,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF1557A6),
                               foregroundColor: Colors.white,
@@ -243,7 +389,11 @@ class _TelaLoginState extends State<TelaLogin> {
                               ),
                             ),
                             child: Text(
-                              cadastro ? 'Criar minha conta' : 'Entrar',
+                              enviando
+                                  ? 'Aguarde…'
+                                  : cadastro
+                                  ? 'Criar minha conta'
+                                  : 'Entrar',
                               style: const TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
@@ -252,37 +402,7 @@ class _TelaLoginState extends State<TelaLogin> {
                           ),
                         ),
 
-                        const SizedBox(height: 22),
-
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Flexible(
-                              child: Text(
-                                cadastro
-                                    ? 'Já tem uma conta?'
-                                    : 'Ainda não tem uma conta?',
-                                style: const TextStyle(
-                                  color: Color(0xFF718096),
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ),
-                            TextButton(
-                              onPressed: alternarTela,
-                              child: Text(
-                                cadastro ? 'Fazer login' : 'Cadastre-se',
-                                style: const TextStyle(
-                                  color: Color(0xFF1557A6),
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-
-                        const SizedBox(height: 8),
-
+                        const SizedBox(height: 16),
                         const Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
@@ -292,11 +412,13 @@ class _TelaLoginState extends State<TelaLogin> {
                               color: Color(0xFF718096),
                             ),
                             SizedBox(width: 6),
-                            Text(
-                              'Cidade mais conectada, vida melhor',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: Color(0xFF718096),
+                            Flexible(
+                              child: Text(
+                                'Cidade mais conectada, vida melhor',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Color(0xFF718096),
+                                ),
                               ),
                             ),
                           ],
